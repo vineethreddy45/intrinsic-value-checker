@@ -26,6 +26,11 @@ def money(x, currency=""):
     return f"{currency}{x:,.2f}"
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _fetch(ticker):
+    return fetch_fundamentals(ticker)
+
+
 with st.sidebar:
     st.header("Assumptions")
     growth_pct = st.slider("Growth rate (%)", 0.0, 25.0, 10.0, 0.5)
@@ -44,13 +49,23 @@ if go or "fund" in st.session_state:
     if go or st.session_state.get("ticker") != ticker:
         with st.spinner(f"Fetching {ticker}…"):
             try:
-                st.session_state["fund"] = fetch_fundamentals(ticker)
+                st.session_state["fund"] = _fetch(ticker)
                 st.session_state["ticker"] = ticker
             except Exception as exc:  # network / bad ticker
                 st.error(f"Could not fetch {ticker}: {exc}")
                 st.session_state.pop("fund", None)
     fund = st.session_state.get("fund")
     if fund is not None:
+        if fund.price is None and not fund.history:
+            st.error(
+                f"Yahoo Finance returned no data for {fund.ticker}. It rate-limits "
+                "shared cloud servers — wait a minute and press Analyze again. "
+                "If it keeps happening, the ticker may be delisted or misspelled."
+            )
+        elif fund.missing:
+            st.warning("Some figures were unavailable from every source: "
+                       + ", ".join(fund.missing)
+                       + ". Models needing them show as unavailable.")
         result = value_stock(
             fund,
             growth=growth_pct / 100,
